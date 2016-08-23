@@ -1,0 +1,257 @@
+---
+title: "Growth Curve Tutorial"
+author: "Stephen Kelly"
+date: "August 23, 2016"
+output: html_document
+---
+
+
+```{r}
+# these R packages are needed for data processing
+
+package_list<-c("ggplot2", "grid", 'graphics', 'dae', 'e1071', 'nortest', "plyr", "knitr", "VennDiagram", 
+                "gridExtra", "datasets", "digest", "Hmisc", "xtable", "reshape2", 
+                "data.table", "scales", "corrplot", "RColorBrewer", "lattice", 
+                "gplots", "MASS", "stringr", "flsa", "genlasso", "optparse", 
+                "pastecs", "plotrix", "zoo", "reshape", "chron","UpSetR",'preprocessCore')
+
+for(package in package_list){
+    install.packages(package)
+}
+
+# require(beanplot)
+# suppressPackageStartupMessages(require(ggplot2))
+# suppressPackageStartupMessages(require(graphics))
+# suppressPackageStartupMessages(require(xtable))
+# suppressPackageStartupMessages(require(dae))
+# suppressPackageStartupMessages(require(e1071))
+# suppressPackageStartupMessages(require(nortest))
+# suppressPackageStartupMessages(require(plyr))
+
+```
+
+
+```{r, echo=FALSE}
+# values represent cells/mL data; previously measured fluorescence, converted to cells/mL with Standard Curve not calculated here
+Exp1<-data.frame(Full1 = c(-12148.75, -20927.08, 296688.86, 1076364.17, 
+                           2155300.73, 2844000.62, 3793656.32, 3941291.87, 
+                           4383400.49, 4914888.47, 4925262.86, 5002671.77, 
+                           5582041.55, 5599598.21), 
+                 Full2 = c(-13744.81, -24917.23, 291102.65, 1103497.19, 
+                           2177645.57, 2851182.89, 3713853.32, 3954060.35, 
+                           4449636.98, 5015440.25, 4988307.23, 5149509.29, 
+                           5578051.4, 5686583.48),
+                 Full3 = c(-5764.51, -20927.08, 286314.47, 1101103.1, 2188019.96,
+                           2875921.82, 3752158.76, 4052218.04, 4444050.77,4984317.08, 
+                           4986711.17, 5088060.98, 5502238.55,
+                           5628327.29))
+Exp2<-data.frame(Deficient1 = c(-20129.05, -5764.51, 302275.07, 820994.57, 
+                                1236768.2, 1901527.19, 2900660.75, 3399429.5, 
+                                3848720.39, 4520661.65, 4608444.95, 4814336.69, 
+                                5198189.12, 5287568.48),
+                 Deficient2 = c(-16936.93, -32099.5, 266363.72, 868078.34,
+                                1362856.94, 2104226.81, 3129695.36, 3551853.23, 
+                                4022690.93, 4734533.69, 4778425.34, 4996287.53, 
+                                5601194.27, 5747233.76), 
+                 Deficient3 = c(-13744.81, -21725.11, 312649.46, 854511.83, 1336521.95,
+                                2108216.96, 2959714.97, 3285311.21, 3699488.78, 
+                                4255715.69, 4294021.13, 4428888.2, 4772839.13, 
+                                4882169.24))
+Cont1<-data.frame(Full1 = c(-7360.57, -22523.14, 276738.11, 1067585.84,
+                            2161684.97, 2880710, 3819991.31, 4053814.1, 
+                            4491134.54, 5127962.48, 5135144.75, 5275598.03, 
+                            5685785.45, 5797509.65), 
+                  Full2 = c(-10552.69, -12946.78, 269555.84, 1006935.56, 
+                            2081083.94, 2785744.43, 3868671.14, 4095311.66, 
+                            4508691.2, 5169460.04, 5194198.97, 5371361.63,
+                            5104021.58, 5997815.18),
+                  Full3 = c(-15340.87, -32099.5, 239230.7, 965438, 2043576.53, 
+                            2750631.11, 3792060.26, 4013912.6, 4465597.58, 
+                            5139932.93, 5131952.63,
+                            5258839.4, 5813470.25, 5950731.41))
+Cont2<-data.frame(Deficient1 = c(-8158.6, -24119.2, 117132.11, 345368.69, 
+                                 422777.6, 527319.53, 1362856.94, 2368374.74, 
+                                 3140069.75, 4005134.27, 4403351.24,
+                                 4637174.03, 5309913.32, 5630721.38), 
+                  Deficient2 = c(-10552.69, -28109.35, 117930.14, 289506.59, 
+                                 366915.5, 418787.45, 1081950.38, 2026019.87, 
+                                 2904650.9, 3781685.87, 4170326.48, 4388188.67,
+                                 5056139.78, 5396100.56))
+#
+Data<-data.frame(Day = rep(1:14,times=11),
+                 PPFM_Type = c(rep("Experimental",times=6*14),rep("Control",times=5*14)),
+                 Media = c(rep("Full",times=3*14),rep("Deficient",times=3*14),
+                           rep("Full",times=3*14),rep("Deficient",times=2*14)),
+                 cells_mL = c(Exp1$Full1,Exp1$Full2,Exp1$Full3,
+                              Exp2$Deficient1,Exp2$Deficient2,Exp2$Deficient3,
+                              Cont1$Full1,Cont1$Full2,Cont1$Full3,
+                              Cont2$Deficient1,Cont2$Deficient2))
+
+rm(Cont1,Cont2,Exp1,Exp2)
+```
+
+```{r}
+AggregateData<- aggregate(cells_mL ~ Day + PPFM_Type + Media, data=Data, FUN=mean)
+AggregateData$sd <- aggregate(cells_mL ~ Day + PPFM_Type + Media,
+                              data=Data, FUN=sd)$cells_mL
+
+
+```
+
+```{r}
+# Data[Data[["Day"]]==1,] # this is how you get the entries you want don't forget it
+
+# need factor levels for each entry to do statistical analysis
+Data$Factor<-as.factor(c(rep("Experimental.Full",times=3*14),
+                         rep("Experimental.Deficient",times=3*14),
+                         rep("Control.Full",times=3*14),
+                         rep("Control.Deficient",times=2*14)))
+# make empty vector 
+Kruskal_Days<-vector(mode = "numeric",length=length(unique(Data[["Day"]])))
+
+# fill vector with p values from Kruskal test
+for(i in unique(Data[["Day"]])){
+  Kruskal_Days[as.numeric(i)]<-signif(kruskal.test(cells_mL~Factor, 
+                                                   data = subset(Data,
+                                                                 subset=(Day==i)))$p.value,
+                                      digits=4)
+  
+}
+# Kruskal_p_all<-signif(kruskal.test(cells_mL~Factor, 
+#                                    data = subset(Data,
+#                                                  subset=(Day==7)))$p.value,
+#                       digits=4)
+
+```
+
+```{r}
+print(xtable(data.frame(Kruskal_Days),digits = 4))
+
+```
+
+```{r}
+# pdf(file='./Figures/Isochr_GrowthCurve1.pdf',width=8,height=8)
+
+# force scientific notation on axis
+options(scipen=-1)
+
+# find the highest value that will be included on the graph
+HighValue<-max(AggregateData$cells_mL+AggregateData$sd,na.rm = T)
+
+# make the plot with 1st set of data points
+plot(cells_mL ~ Day,
+     data=subset(AggregateData,
+                 subset=(PPFM_Type=="Experimental" & Media=="Full")),
+     main=expression(paste(italic("Isochrysis sp.")," Growth Curve")),
+     xlab='Day',
+     ylab='cells/mL',
+     col='pink',
+     pch=16,
+     xlim=c(0,14),
+     ylim=c(0,HighValue+5e5)) 
+
+# start adding the other data points
+points(cells_mL ~ Day,
+       data=subset(AggregateData,
+                   subset=(PPFM_Type=="Control" & Media=="Full")),
+       col='darkgreen',
+       pch=17)
+points(cells_mL ~ Day,
+       data=subset(AggregateData,
+                   subset=(PPFM_Type=="Control" & Media=="Deficient")),
+       col='darkgreen',
+       pch=24,
+       lwd=2)#B12free_F_2media
+points(cells_mL ~ Day,
+       data=subset(AggregateData,
+                   subset=(PPFM_Type=="Experimental" & Media=="Deficient")),
+       col='pink',
+       pch=21,
+       lwd=3)#B12free_F_2media.PPFM
+#F_2media.PPFM_ EXP1
+
+# start adding the error bars; standard deviations +/- mean
+arrows(x0=AggregateData[['Day']],
+       y0=subset(AggregateData,
+                 subset=(PPFM_Type=="Experimental" & Media=="Full"))$cells_mL-
+         subset(AggregateData,
+                subset=(PPFM_Type=="Experimental" & Media=="Full"))$sd,
+       x1=AggregateData[['Day']],
+       y1=subset(AggregateData,
+                 subset=(PPFM_Type=="Experimental" & Media=="Full"))$cells_mL+
+         subset(AggregateData,
+                subset=(PPFM_Type=="Experimental" & Media=="Full"))$sd,
+       length=0.05,
+       angle=90,
+       code=3,
+       col='pink')
+#F_2media CONT1
+arrows(x0=AggregateData[['Day']],
+       y0=subset(AggregateData,
+                 subset=(PPFM_Type=="Control" & Media=="Full"))$cells_mL-
+         subset(AggregateData,
+                subset=(PPFM_Type=="Control" & Media=="Full"))$sd,
+       x1=AggregateData[['Day']],
+       y1=subset(AggregateData,
+                 subset=(PPFM_Type=="Control" & Media=="Full"))$cells_mL+
+         subset(AggregateData,
+                subset=(PPFM_Type=="Control" & Media=="Full"))$sd,
+       length=0.05,
+       angle=90,
+       code=3,
+       col='darkgreen')
+#B12free_F_2media.PPFM EXP2
+arrows(x0=AggregateData[['Day']],
+       y0=subset(AggregateData,
+                 subset=(PPFM_Type=="Experimental" & Media=="Deficient"))$cells_mL-
+         subset(AggregateData,
+                subset=(PPFM_Type=="Experimental" & Media=="Deficient"))$sd,
+       x1=AggregateData[['Day']],
+       y1=subset(AggregateData,
+                 subset=(PPFM_Type=="Experimental" & Media=="Deficient"))$cells_mL+
+         subset(AggregateData,
+                subset=(PPFM_Type=="Experimental" & Media=="Deficient"))$sd,
+       length=0.05,
+       angle=90,
+       code=3,
+       col='pink')
+#B12free_F_2media CONT2
+arrows(x0=AggregateData[['Day']],
+       y0=abs(subset(AggregateData,
+                     subset=(PPFM_Type=="Control" & Media=="Deficient"))$cells_mL-
+                subset(AggregateData,
+                       subset=(PPFM_Type=="Control" & Media=="Deficient"))$sd),
+       x1=AggregateData[['Day']],
+       y1=subset(AggregateData,
+                 subset=(PPFM_Type=="Control" & Media=="Deficient"))$cells_mL+
+         subset(AggregateData,
+                subset=(PPFM_Type=="Control" & Media=="Deficient"))$sd,
+       length=0.05,
+       angle=90,
+       code=3,
+       col='darkgreen')
+
+for(i in seq(1:length(Kruskal_Days))){
+  if(Kruskal_Days[i]<=0.05){
+    YvaluesDayi<-AggregateData[AggregateData[["Day"]]==i,]$cells_mL+AggregateData[AggregateData[["Day"]]==i,]$sd
+    StarPlacement<-max(YvaluesDayi)
+    points(x = i,y = StarPlacement+5e5,pch="*",col="red",lwd=10)
+  }
+  else{}
+}
+
+# add the legend
+legend("topleft", 
+       c("Full media + PPFM B12",
+         "Full media control",
+         "Deficient media + PPFM B12",
+         'Deficient media control'),
+       col=c('pink','darkgreen','pink','darkgreen'),
+       pch=list(16,17,21,24),
+       cex=0.8,
+       pt.lwd=list(1,1,3,2),
+       bty='n')
+
+# never forget this or bad things happen
+# dev.off()
+```
